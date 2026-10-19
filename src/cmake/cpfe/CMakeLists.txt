@@ -54,6 +54,7 @@ option(EDG_BUILD_CALLABLE_LIBRARY
 
 if(EDG_BUILD_CALLABLE_LIBRARY)
   add_library(edgcpfe STATIC ${ALL_C_FILES} ${TXT_FILES})
+  set_target_properties(edgcpfe PROPERTIES POSITION_INDEPENDENT_CODE ON)
   add_dependencies(edgcpfe error-info)
 
   # Release executables use GCC/Clang LTO; distributing LTO objects ties a
