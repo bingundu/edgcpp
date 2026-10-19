@@ -44,7 +44,7 @@ jobs:
           set -e
           archive=build/gcc-release/lib/libedgcpfe.a
           test -s "$archive"
-          ar t "$archive" | grep -q '\.o$'
+          ar t "$archive" | grep '\.o$'
           nm -C --defined-only "$archive" | grep -F 'edg::edg_main(int, char**)'
           g++ -std=c++14 -O2 -Iinclude \
             .github/tests/link-edgcpfe.cpp "$archive" \
