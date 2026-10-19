@@ -46,3 +46,24 @@ add_dependencies(cpfe-all cpfe)
 
 # Expose softfloat.
 add_softfloat_to_target("${primary_front_end_target}")
+
+# Build an embeddable front-end archive without changing the default executables.
+# EDG's callable mode replaces main() with edg::edg_main(int, char **).
+option(EDG_BUILD_CALLABLE_LIBRARY
+       "Build a static, callable EDG C/C++ front-end library" OFF)
+
+if(EDG_BUILD_CALLABLE_LIBRARY)
+  add_library(edgcpfe STATIC ${ALL_C_FILES} ${TXT_FILES})
+  add_dependencies(edgcpfe error-info)
+
+  # Release executables use GCC/Clang LTO; distributing LTO objects ties a
+  # static library to a specific compiler plugin/version.  Emit native x86-64
+  # object code instead so ordinary g++ link commands can consume the archive.
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
+     CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(edgcpfe PRIVATE "$<$<CONFIG:Release>:-fno-lto>")
+  endif()
+
+  target_compile_definitions(edgcpfe PRIVATE MAKE_FRONT_END_CALLABLE=1)
+  add_softfloat_to_target(edgcpfe)
+endif()
