@@ -63,7 +63,8 @@ jobs:
           cp LICENSE.txt RELEASE-LIBRARY.md dist/package/
           printf 'ref=%s\ncommit=%s\nplatform=linux-x86_64\n' \
             "$RELEASE_REF" "$COMMIT_SHA" > dist/package/BUILD-INFO.txt
-          tar -czf "dist/edgcpfe-${RELEASE_REF}-linux-x86_64.tar.gz" \
+          safe_ref="${RELEASE_REF//\//-}"
+          tar -czf "dist/edgcpfe-${safe_ref}-linux-x86_64.tar.gz" \
             -C dist/package .
 
       - name: Upload archive
