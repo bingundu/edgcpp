@@ -3,6 +3,14 @@
 name: Publish existing callable EDG archive
 
 on:
+  # This workflow is not installed on the default branch, so a
+  # workflow_dispatch-only trigger would be unavailable. Run only when its
+  # own publication recipe changes; release-edgcpfe.yml ignores .github
+  # changes and will NOT recompile the native EDG archive.
+  push:
+    branches: [ci/x86_64-callable-release]
+    paths:
+      - '.github/workflows/publish-callable-artifact.yml'
   workflow_dispatch:
 
 permissions: {}
