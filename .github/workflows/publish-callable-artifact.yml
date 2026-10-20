@@ -1,0 +1,65 @@
+# Promote the already-tested EDG archive to a durable release without
+# compiling EDG a second time. Re-run manually if the publication fails.
+name: Publish existing callable EDG archive
+
+on:
+  push:
+    branches:
+      - ci/x86_64-callable-release
+    paths:
+      - .github/workflows/publish-callable-artifact.yml
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    env:
+      EDG_SOURCE_SHA: 799603e0b5ab272d9418e2d44a53a95bc73dfdc4
+      EDG_RELEASE_TAG: edgcpfe-ci-799603e0b5ab
+
+    steps:
+      - name: Download the previously built and verified EDG archive
+        uses: actions/download-artifact@v7
+        with:
+          name: callable-edgcpfe-linux-x86_64
+          repository: bingundu/edgcpp
+          run-id: 39259142410
+          github-token: ${{ github.token }}
+          path: dist
+
+      - name: Verify source identity and archive contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=dist/edgcpfe-ci-x86_64-callable-release-linux-x86_64.tar.gz
+          test -s "$archive"
+          mkdir -p verify
+          tar -xzf "$archive" -C verify
+          grep -Fx "commit=$EDG_SOURCE_SHA" verify/BUILD-INFO.txt
+          grep -Fx 'platform=linux-x86_64' verify/BUILD-INFO.txt
+          test -s verify/lib/libedgcpfe.a
+          test -s verify/include/edgcpfe.h
+          echo "Verified existing EDG artifact from $EDG_SOURCE_SHA"
+
+      - name: Publish permanent versioned GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: bingundu/edgcpp
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=dist/edgcpfe-ci-x86_64-callable-release-linux-x86_64.tar.gz
+          if gh release view "$EDG_RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$EDG_RELEASE_TAG" "$archive" --clobber
+          else
+            gh release create "$EDG_RELEASE_TAG" "$archive" \
+              --target "$EDG_SOURCE_SHA" \
+              --title "Callable EDG x86-64 $EDG_SOURCE_SHA" \
+              --notes "Existing callable EDG archive from successful Actions run 39259142410. This release is pinned to the matching EDG source commit; it does not rebuild the native compiler."
+          fi
