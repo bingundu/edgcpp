@@ -1,13 +1,8 @@
 # Promote the already-tested EDG archive to a durable release without
-# compiling EDG a second time. Re-run manually if the publication fails.
+# compiling EDG a second time. Run on demand; never rebuild EDG or overwrite an existing published asset.
 name: Publish existing callable EDG archive
 
 on:
-  push:
-    branches:
-      - ci/x86_64-callable-release
-    paths:
-      - .github/workflows/publish-callable-artifact.yml
   workflow_dispatch:
 
 permissions: {}
@@ -22,6 +17,7 @@ jobs:
     env:
       EDG_SOURCE_SHA: 799603e0b5ab272d9418e2d44a53a95bc73dfdc4
       EDG_RELEASE_TAG: edgcpfe-ci-799603e0b5ab
+      EDG_ASSET_SHA256: fa769825e70766fbefe017806816b2338acd03daa93bb5562369c293972ce64c
 
     steps:
       - name: Download the previously built and verified EDG archive
@@ -39,6 +35,7 @@ jobs:
           set -euo pipefail
           archive=dist/edgcpfe-ci-x86_64-callable-release-linux-x86_64.tar.gz
           test -s "$archive"
+          printf '%s  %s\n' "$EDG_ASSET_SHA256" "$archive" | sha256sum --check --status
           mkdir -p verify
           tar -xzf "$archive" -C verify
           grep -Fx "commit=$EDG_SOURCE_SHA" verify/BUILD-INFO.txt
@@ -56,7 +53,12 @@ jobs:
           set -euo pipefail
           archive=dist/edgcpfe-ci-x86_64-callable-release-linux-x86_64.tar.gz
           if gh release view "$EDG_RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$EDG_RELEASE_TAG" "$archive" --clobber
+            # Never overwrite a pinned asset: a changed byte stream must use
+            # a new release tag so downstream consumers stay reproducible.
+            existing_digest="$(gh api "repos/$GH_REPO/releases/tags/$EDG_RELEASE_TAG" \
+              --jq '.assets[] | select(.name == "edgcpfe-ci-x86_64-callable-release-linux-x86_64.tar.gz") | .digest')"
+            test "$existing_digest" = "sha256:$EDG_ASSET_SHA256"
+            echo "Release already exists with the verified digest; nothing to publish"
           else
             gh release create "$EDG_RELEASE_TAG" "$archive" \
               --target "$EDG_SOURCE_SHA" \
