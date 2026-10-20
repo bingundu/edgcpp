@@ -7,6 +7,11 @@ on:
       - ci/x86_64-callable-release
     tags:
       - 'edgcpfe-v*'
+    # CI/documentation edits do not require another expensive native build.
+    # Tagged releases and manual dispatch still run the full link smoke test.
+    paths-ignore:
+      - '.github/**'
+      - '**/*.md'
   workflow_dispatch:
 
 permissions:
