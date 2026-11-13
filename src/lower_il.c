@@ -31,12 +31,14 @@ extern "C" void edgcpp_capture_post_lower_virtual_call(
     void *receiver_reused_for_call)
     __attribute__((weak));
 // Native IA64_ABI (Itanium class ABI) lowering has just constructed
-// eok_padd(__vptr, exact native index constant). Export the exact index
-// expression and EDG-selected element width, NOT an executable machine
-// slot/address point or adjustment. Old clients can ignore this observer.
+// eok_padd(__vptr, exact native index constant). Export the original
+// eok_padd node AND both operand identities: index presence alone is not
+// enough to prove that the source-built dispatch shape survived. These
+// nodes do NOT certify an executable slot/address point/adjustment.
 #if IA64_ABI
 extern "C" void edgcpp_capture_virtual_entry_index(
-    void *original_routine_operand, void *index_expression,
+    void *original_routine_operand, void *entry_expression,
+    void *vptr_expression, void *index_expression,
     unsigned long long source_index, unsigned long long entry_bytes)
     __attribute__((weak));
 #endif
@@ -12352,13 +12354,13 @@ created.
   // This observer runs at the exact site where EDG builds the actual
   // native (vptr + index) selection expression, not at a caller that
   // might infer a physical vtable slot from routine metadata alone.
-  // The bridge must independently find this *same index node* in the
-  // final callee subtree after lowering and copying; the witness is
-  // optional when the physical node identity is lost.
+  // The bridge must independently find this *same eok_padd node*
+  // with the exact vptr/index operand links in the final callee subtree;
+  // the witness is optional after copying or any shape change.
 #if IA64_ABI && (defined(__GNUC__) || defined(__clang__))
   if (edgcpp_capture_virtual_entry_index != NULL) {
     edgcpp_capture_virtual_entry_index(
-        func_node, index_node,
+        func_node, vtbl_entry_node, vptr_node, index_node,
         (unsigned long long)idx,
         (unsigned long long)vtbl_entry_size());
   }
