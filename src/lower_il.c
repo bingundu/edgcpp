@@ -27,7 +27,8 @@ extern "C" void edgcpp_capture_pre_lower_virtual_call(
 // still verify the post-lowering call/callee identity and fail closed if
 // subsequent copying or inlining invalidates it.
 extern "C" void edgcpp_capture_post_lower_virtual_call(
-    void *original_call, void *rewritten_call)
+    void *original_call, void *rewritten_call,
+    void *receiver_reused_for_call)
     __attribute__((weak));
 #endif
 #if NEED_NAME_MANGLING
@@ -12436,6 +12437,10 @@ have already been lowered.
 {
   an_expr_node_ptr func_node, object_node, additional_args;
   an_expr_node_ptr func_select_node, assign_node = NULL, return_node = NULL;
+  // get_virtual_function_address returns EDG's source-owned reusable copy
+  // of the receiver. Remember this exact node before the ABI path may
+  // add further object-pointer/hidden-return transformations.
+  an_expr_node_ptr receiver_reused_for_call = NULL;
   a_type_ptr       func_type;
   a_routine_type_supplement_ptr
                    rtsp;
@@ -12505,6 +12510,7 @@ have already been lowered.
                                     /*vars_can_change=*/args_have_side_effects,
                                     &vtbl_temp_var,
                                     &assign_node);
+  receiver_reused_for_call = object_node;
 #if IA64_ABI
   /* IA-64 ABI: The rewritten form is
        (object->__vptr[index])(object, additional_args ...)
@@ -12572,7 +12578,8 @@ have already been lowered.
 #if defined(__GNUC__) || defined(__clang__)
   if (edgcpp_capture_post_lower_virtual_call != NULL) {
     edgcpp_capture_post_lower_virtual_call(
-        expr, assign_node != NULL ? func_node : expr);
+        expr, assign_node != NULL ? func_node : expr,
+        receiver_reused_for_call);
   }
 #endif
 }  /* lower_virtual_function_call */
