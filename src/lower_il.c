@@ -12,6 +12,15 @@ lower_il.c -- Lower C++ intermediate language to C intermediate language.
 */
 
 #include "basic_hdrs.h"
+// Opt-in, weak C-ABI observation hook for pre-lowering virtual member calls.
+// Built EDG clients without a bridge remain unaffected. This exports original
+// source operands before EDG replaces the routine with a vtable expression;
+// it is not a native virtual dispatch ABI or authorization to call.
+#if DO_IL_LOWERING && (defined(__GNUC__) || defined(__clang__))
+extern "C" void edgcpp_capture_pre_lower_virtual_call(
+    void *original_call, void *routine_operand, void *receiver_operand)
+    __attribute__((weak));
+#endif
 #if NEED_NAME_MANGLING
 /* Header files common to all files. */
 #include "fe_common.h"
@@ -12445,6 +12454,15 @@ have already been lowered.
                   func_type->kind == (a_type_kind)tk_routine);
   rtsp = func_type->variant.routine.extra_info;
   object_node = func_node->next;
+  // Preserve source-owned routine/receiver identity *before* detaching the
+  // operand list, manufacturing an indirect vtable callee or overwriting the
+  // original call node. The weak observer copies only diagnostic facts; it
+  // cannot modify EDG IL, replace dispatch, or assign machine vtable slots.
+#if defined(__GNUC__) || defined(__clang__)
+  if (edgcpp_capture_pre_lower_virtual_call != NULL) {
+    edgcpp_capture_pre_lower_virtual_call(expr, func_node, object_node);
+  }
+#endif
   additional_args = object_node->next;
   if (rtsp->value_returned_as_parameter) {
     /* The function returns its value via an added return value address
