@@ -48,6 +48,12 @@ extern "C" void edgcpp_capture_virtual_entry_shape(
     void *vptr_expression, void *index_expression,
     unsigned long long source_index, unsigned long long entry_bytes)
     __attribute__((weak));
+// Independently identify the receiver used by the vptr lookup and the
+// reusable receiver passed to the rewritten call. They can be distinct
+// native nodes (make_reusable_copy), and this is not a subobject/this ABI.
+extern "C" void edgcpp_capture_virtual_receiver_pair(
+    void *original_routine_operand, void *vptr_lookup_object,
+    void *reusable_call_receiver) __attribute__((weak));
 #endif
 #endif
 #if NEED_NAME_MANGLING
@@ -12430,9 +12436,18 @@ occur in the generated code).
   }  /* if */
   /* Make a copy of the object address. */
   object_node_copy = make_reusable_copy(*object_node, vars_can_change);
+  /* EDG will use the original object expression for the vptr read.
+     Save its exact node identity before building the vptr lookup. */
+  an_expr_node_ptr vptr_lookup_object = *object_node;
   /* Make a node for the address of the virtual table entry for the
      function. */
   vtbl_entry_node = make_vtbl_entry_node(func_node, *object_node);
+#if defined(__GNUC__) || defined(__clang__)
+  if (edgcpp_capture_virtual_receiver_pair != NULL) {
+    edgcpp_capture_virtual_receiver_pair(
+        func_node, vptr_lookup_object, object_node_copy);
+  }
+#endif
   /* Get the function pointer stored in the virtual function table. */
   func_select_node = add_cast_if_necessary(vtbl_entry_node,
                                            make_pointer_type(func_node->type));
