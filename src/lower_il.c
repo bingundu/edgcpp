@@ -30,6 +30,16 @@ extern "C" void edgcpp_capture_post_lower_virtual_call(
     void *original_call, void *rewritten_call,
     void *receiver_reused_for_call)
     __attribute__((weak));
+// Native IA64_ABI (Itanium class ABI) lowering has just constructed
+// eok_padd(__vptr, exact native index constant). Export the exact index
+// expression and EDG-selected element width, NOT an executable machine
+// slot/address point or adjustment. Old clients can ignore this observer.
+#if IA64_ABI
+extern "C" void edgcpp_capture_virtual_entry_index(
+    void *original_routine_operand, void *index_expression,
+    unsigned long long source_index, unsigned long long entry_bytes)
+    __attribute__((weak));
+#endif
 #endif
 #if NEED_NAME_MANGLING
 /* Header files common to all files. */
@@ -12339,6 +12349,20 @@ created.
   vtbl_entry_node = make_operator_node((an_expr_operator_kind)eok_padd,
                                        vptr_node->type, vptr_node);
   vptr_node->next = index_node;
+  // This observer runs at the exact site where EDG builds the actual
+  // native (vptr + index) selection expression, not at a caller that
+  // might infer a physical vtable slot from routine metadata alone.
+  // The bridge must independently find this *same index node* in the
+  // final callee subtree after lowering and copying; the witness is
+  // optional when the physical node identity is lost.
+#if IA64_ABI && (defined(__GNUC__) || defined(__clang__))
+  if (edgcpp_capture_virtual_entry_index != NULL) {
+    edgcpp_capture_virtual_entry_index(
+        func_node, index_node,
+        (unsigned long long)idx,
+        (unsigned long long)vtbl_entry_size());
+  }
+#endif
   return vtbl_entry_node;
 }  /* make_vtbl_entry_node */
 
