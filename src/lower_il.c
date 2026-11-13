@@ -20,6 +20,15 @@ lower_il.c -- Lower C++ intermediate language to C intermediate language.
 extern "C" void edgcpp_capture_pre_lower_virtual_call(
     void *original_call, void *routine_operand, void *receiver_operand)
     __attribute__((weak));
+// A second source-owned observer certifies which *rewritten* eok_call
+// was produced by this exact invocation of lower_virtual_function_call.
+// This matters when the original node becomes an eok_comma and its old
+// enk_routine operand is reused as the actual eok_call. The bridge must
+// still verify the post-lowering call/callee identity and fail closed if
+// subsequent copying or inlining invalidates it.
+extern "C" void edgcpp_capture_post_lower_virtual_call(
+    void *original_call, void *rewritten_call)
+    __attribute__((weak));
 #endif
 #if NEED_NAME_MANGLING
 /* Header files common to all files. */
@@ -12557,6 +12566,15 @@ have already been lowered.
        the call node. */
     overwrite_node(expr, func_node);
   }  /* if */
+  // At this point the rewritten call identity is unambiguous even when
+  // expr itself is now a comma operator. The weak observer only records a
+  // source-owned association; it cannot authorize vtable call execution.
+#if defined(__GNUC__) || defined(__clang__)
+  if (edgcpp_capture_post_lower_virtual_call != NULL) {
+    edgcpp_capture_post_lower_virtual_call(
+        expr, assign_node != NULL ? func_node : expr);
+  }
+#endif
 }  /* lower_virtual_function_call */
 
 
