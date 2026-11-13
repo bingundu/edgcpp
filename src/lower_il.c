@@ -36,7 +36,14 @@ extern "C" void edgcpp_capture_post_lower_virtual_call(
 // enough to prove that the source-built dispatch shape survived. These
 // nodes do NOT certify an executable slot/address point/adjustment.
 #if IA64_ABI
+// Retain the original four-argument callback ABI for older bridge clients.
 extern "C" void edgcpp_capture_virtual_entry_index(
+    void *original_routine_operand, void *index_expression,
+    unsigned long long source_index, unsigned long long entry_bytes)
+    __attribute__((weak));
+// The expanded parent+operands observer uses a distinct C symbol. Never
+// change the calling convention of the existing weak entry-index hook.
+extern "C" void edgcpp_capture_virtual_entry_shape(
     void *original_routine_operand, void *entry_expression,
     void *vptr_expression, void *index_expression,
     unsigned long long source_index, unsigned long long entry_bytes)
@@ -12358,9 +12365,16 @@ created.
   // with the exact vptr/index operand links in the final callee subtree;
   // the witness is optional after copying or any shape change.
 #if IA64_ABI && (defined(__GNUC__) || defined(__clang__))
-  if (edgcpp_capture_virtual_entry_index != NULL) {
-    edgcpp_capture_virtual_entry_index(
+  if (edgcpp_capture_virtual_entry_shape != NULL) {
+    edgcpp_capture_virtual_entry_shape(
         func_node, vtbl_entry_node, vptr_node, index_node,
+        (unsigned long long)idx,
+        (unsigned long long)vtbl_entry_size());
+  } else if (edgcpp_capture_virtual_entry_index != NULL) {
+    // Old bridge ABI: index-only evidence remains available, but cannot
+    // be misinterpreted as the new exact-parent proof.
+    edgcpp_capture_virtual_entry_index(
+        func_node, index_node,
         (unsigned long long)idx,
         (unsigned long long)vtbl_entry_size());
   }
