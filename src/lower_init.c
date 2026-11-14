@@ -24,6 +24,9 @@ extern "C" void edgcpp_capture_file_scope_init_slice_v1(
 extern "C" void edgcpp_capture_file_scope_init_member_v1(
     void *generated_routine, void *processed_source_init)
     __attribute__((weak));
+extern "C" void edgcpp_capture_file_scope_init_end_v1(
+    void *generated_routine, unsigned long processed_count)
+    __attribute__((weak));
 #endif
 #if DO_IL_LOWERING
 /* Header files common to all files. */
@@ -19043,6 +19046,7 @@ enough to cause the back end to invoke the routine at initialization.
     }  /* if */
 #endif
     processing_file_scope_init_routine = TRUE;
+    unsigned long source_processed_init_count = 0;
 #if SEPARATE_ROUTINES_FOR_FILE_SCOPE_DYNAMIC_INITS || MAINTAIN_NEEDED_FLAGS ||\
     USE_PATCH_INIT_STARTUP
     init_rout = scope->variant.routine.ptr;
@@ -19093,6 +19097,9 @@ enough to cause the back end to invoke the routine at initialization.
          go. */
       set_insert_location_mark(eff_insert_location);
 #if DO_IL_LOWERING && (defined(__GNUC__) || defined(__clang__))
+      // Count only initializers actually lowered (not skipped prototypes,
+      // suppressed inline definitions, or delayed priority slices).
+      ++source_processed_init_count;
       // This event occurs only for an init EDG actually selects for the
       // generated routine (after suppression/slicing/guard decisions).
       if (edgcpp_capture_file_scope_init_member_v1 != NULL) {
@@ -19198,6 +19205,14 @@ enough to cause the back end to invoke the routine at initialization.
       }  /* if */
 #endif /* USE_LAZY_INITIALIZATION_FOR_THREAD_LOCAL_VARIABLES */
     }  /* for */
+#if DO_IL_LOWERING && (defined(__GNUC__) || defined(__clang__))
+    // Require a producer-side count: missing or truncated member callbacks
+    // must never masquerade as a complete init slice.
+    if (edgcpp_capture_file_scope_init_end_v1 != NULL) {
+      edgcpp_capture_file_scope_init_end_v1(
+          (void *)scope->variant.routine.ptr, source_processed_init_count);
+    }  /* if */
+#endif
     if (do_thread_local) {
 #if USE_LAZY_INITIALIZATION_FOR_THREAD_LOCAL_VARIABLES
       check_assertion(!do_single_init);
