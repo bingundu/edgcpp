@@ -12,6 +12,16 @@ lower_init.c -- IL lowering: initializations and new/delete.
 */
 
 #include "basic_hdrs.h"
+// Observe the exact native EDG-generated startup routine and the source
+// dynamic-init slice selected for it *before* lowering consumes the list.
+// This optional C-linkage callback changes no IL or initialization order.
+// An absent callback must mean unknown provenance, never no side effects.
+#if DO_IL_LOWERING && (defined(__GNUC__) || defined(__clang__))
+extern "C" void edgcpp_capture_file_scope_init_slice_v1(
+    void *generated_routine, void *first_source_init,
+    unsigned long source_priority, int thread_local_slice)
+    __attribute__((weak));
+#endif
 #if DO_IL_LOWERING
 /* Header files common to all files. */
 #include "fe_common.h"
@@ -19022,6 +19032,13 @@ enough to cause the back end to invoke the routine at initialization.
                                             do_thread_local,
                                             &insert_location, &region_number,
                                             &grcontext);
+#if DO_IL_LOWERING && (defined(__GNUC__) || defined(__clang__))
+    if (edgcpp_capture_file_scope_init_slice_v1 != NULL) {
+      edgcpp_capture_file_scope_init_slice_v1(
+          (void *)scope->variant.routine.ptr, (void *)dip,
+          (unsigned long)init_priority, (int)do_thread_local);
+    }  /* if */
+#endif
     processing_file_scope_init_routine = TRUE;
 #if SEPARATE_ROUTINES_FOR_FILE_SCOPE_DYNAMIC_INITS || MAINTAIN_NEEDED_FLAGS ||\
     USE_PATCH_INIT_STARTUP
