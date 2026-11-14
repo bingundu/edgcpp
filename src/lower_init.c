@@ -21,6 +21,9 @@ extern "C" void edgcpp_capture_file_scope_init_slice_v1(
     void *generated_routine, void *first_source_init,
     unsigned long source_priority, int thread_local_slice)
     __attribute__((weak));
+extern "C" void edgcpp_capture_file_scope_init_member_v1(
+    void *generated_routine, void *processed_source_init)
+    __attribute__((weak));
 #endif
 #if DO_IL_LOWERING
 /* Header files common to all files. */
@@ -19089,6 +19092,14 @@ enough to cause the back end to invoke the routine at initialization.
       /* Mark the location where any generated stmk_init statements should
          go. */
       set_insert_location_mark(eff_insert_location);
+#if DO_IL_LOWERING && (defined(__GNUC__) || defined(__clang__))
+      // This event occurs only for an init EDG actually selects for the
+      // generated routine (after suppression/slicing/guard decisions).
+      if (edgcpp_capture_file_scope_init_member_v1 != NULL) {
+        edgcpp_capture_file_scope_init_member_v1(
+            (void *)scope->variant.routine.ptr, (void *)dip);
+      }  /* if */
+#endif
       lower_dynamic_init(dip, &ipd,
                          (an_implied_copy_source *)NULL,
                          (a_variable_ptr)NULL,
