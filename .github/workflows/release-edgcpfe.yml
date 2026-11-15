@@ -1,0 +1,116 @@
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+name: Release callable EDG front end (Linux x86-64)
+
+on:
+  push:
+    branches:
+      - ci/upstream-callable-edg-release-20261114
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and link-test x86-64 archive
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      # Same toolchain/container as the repository's established compiler CI.
+      image: ghcr.io/edgcpp/ci-runner@sha256:14b3948c2ce12cfa5472e5a6c468393d15426f3a67685cc35d830ea5db2acdf8
+    defaults:
+      run:
+        shell: edg-container-exec "bash -eo pipefail {0}"
+    env:
+      EDG_BASE: ${{ github.workspace }}/bases/docker/dev-env/gcc
+
+    steps:
+      - name: Check out tagged sources
+        uses: actions/checkout@v7
+
+      - name: Confirm x86-64 runner
+        run: test "$(uname -m)" = "x86_64"
+
+      - name: Require unmodified upstream lowering implementation
+        run: |
+          if grep -q 'edgcpp_capture_' src/lower_il.c; then
+            echo "::error::Unexpected private lowering hook in upstream source"
+            exit 1
+          fi
+
+      - name: Configure Release library
+        run: cmake --preset linux-gcc-release -DEDG_BUILD_LIB=OFF -DEDG_BUILD_CALLABLE_LIBRARY=ON
+
+      - name: Compile static front-end library
+        run: cmake --build build/gcc-release --target edgcpfe --parallel 2
+
+      - name: Verify archive and link from an independent C++ program
+        run: |
+          set -e
+          archive=build/gcc-release/lib/libedgcpfe.a
+          test -s "$archive"
+          ar t "$archive" | grep '\.o$'
+          nm -C --defined-only "$archive" | grep -F 'edg::edg_main(int, char**)'
+          g++ -std=c++14 -O2 -Iinclude \
+            .github/tests/link-edgcpfe.cpp "$archive" \
+            -o build/gcc-release/edgcpfe-link-smoke
+          test -x build/gcc-release/edgcpfe-link-smoke
+
+      - name: Package distributable
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -e
+          mkdir -p dist/package/lib dist/package/include
+          cp build/gcc-release/lib/libedgcpfe.a dist/package/lib/
+          cp include/edgcpfe.h dist/package/include/
+          cp LICENSE.txt RELEASE-LIBRARY.md dist/package/
+          printf 'ref=%s\ncommit=%s\nplatform=linux-x86_64\n' \
+            "$RELEASE_REF" "$COMMIT_SHA" > dist/package/BUILD-INFO.txt
+          safe_ref="${RELEASE_REF//\//-}"
+          tar -czf "dist/edgcpfe-${safe_ref}-linux-x86_64.tar.gz" \
+            -C dist/package .
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: callable-edgcpfe-linux-x86_64
+          path: dist/edgcpfe-*-linux-x86_64.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish upstream-based GitHub Release
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/ci/upstream-callable-edg-release-20261114'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release archive
+        uses: actions/download-artifact@v7
+        with:
+          name: callable-edgcpfe-linux-x86_64
+          path: dist
+
+      - name: Attach archive to tagged release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_REF: ${{ github.ref_name }}
+          RELEASE_TAG: edgcpfe-v2026.11.14-upstream-177765bb7731
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          safe_ref="${RELEASE_REF//\//-}"
+          archive="dist/edgcpfe-${safe_ref}-linux-x86_64.tar.gz"
+          test -s "$archive"
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            echo "::error::Release $RELEASE_TAG already exists; refusing to overwrite a pinned upstream archive"
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" "$archive" \
+            --target "$RELEASE_SHA" \
+            --title "EDG callable front end: upstream 177765bb7731 (Linux x86-64)" \
+            --notes "Callable static front end based on edgcpp/compiler commit 177765bb773156a7f3d77fa989f11bc9e1715cfe. No custom lowering hooks. Contains libedgcpfe.a, edgcpfe.h, license and source/build provenance."
